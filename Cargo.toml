@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "megenginelite-sys",
+    "megenginelite-rs",
+    "megenginelite-derive",
+]

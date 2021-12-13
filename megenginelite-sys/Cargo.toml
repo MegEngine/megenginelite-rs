@@ -1,0 +1,19 @@
+[package]
+name = "megenginelite-sys"
+version="1.7.0"
+edition = "2018"
+license-file = "../LICENSE"
+description = "A safe megenginelite wrapper in Rust"
+documentation = "https://docs.rs/megenginelite-sys"
+readme = "../README.md"
+repository = "https://github.com/MegEngine/megenginelite-rs"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+lazy_static = "1.4"
+libloading = "0.7"
+
+[build-dependencies]
+bindgen = "0.59"
+cmd_lib = "1.1"

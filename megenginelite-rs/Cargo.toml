@@ -1,0 +1,17 @@
+[package]
+name = "megenginelite-rs"
+version="1.7.0"
+edition = "2018"
+license-file = "../LICENSE"
+description = "A safe megenginelite wrapper in Rust"
+documentation = "https://docs.rs/megenginelite-rs"
+readme = "../README.md"
+repository = "https://github.com/MegEngine/megenginelite-rs"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1"
+megenginelite-sys = { path="../megenginelite-sys" }
+megenginelite-derive = { path="../megenginelite-derive" }
+atomic-waker = "1"
