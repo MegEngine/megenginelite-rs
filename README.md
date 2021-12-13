@@ -4,6 +4,13 @@ A safe megenginelite wrapper in Rust
 
 <strong>⚠️ The project is still in early development, expect bugs, safety issues, and things that don't work ⚠️</strong>
 
+### Install
+
+```toml
+[dependencies]
+megenginelite-rs = "1.7.0"
+```
+
 ### How to use
 
 ```rust
