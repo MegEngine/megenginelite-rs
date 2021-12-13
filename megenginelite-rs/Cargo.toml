@@ -12,6 +12,6 @@ repository = "https://github.com/MegEngine/megenginelite-rs"
 
 [dependencies]
 anyhow = "1"
-megenginelite-sys = { path="../megenginelite-sys" }
-megenginelite-derive = { path="../megenginelite-derive" }
+megenginelite-sys = "1.7.0"
+megenginelite-derive = "0.1.0"
 atomic-waker = "1"
