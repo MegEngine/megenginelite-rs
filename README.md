@@ -1,7 +1,8 @@
 megenginelite-rs
 --------------
-[![Crates.io](https://img.shields.io/crates/v/minifb.svg)](https://crates.io/crates/megenginelite-rs)
-[![Documentation](https://docs.rs/minifb/badge.svg)](https://docs.rs/megenginelite-rs)
+[![Crates.io](https://img.shields.io/crates/v/megenginelite-rs.svg)](https://crates.io/crates/megenginelite-rs)
+[![libs.rs](https://img.shields.io/badge/libs.rs-gray.svg)](https://lib.rs/crates/megenginelite-rs)
+[![Documentation](https://docs.rs/megenginelite-rs/badge.svg)](https://docs.rs/megenginelite-rs)
 
 A safe megenginelite wrapper in Rust
 
