@@ -57,13 +57,9 @@ fn fetch() -> io::Result<()> {
     let err_header = lite_include_dir().join("common_enum_c.h"); // workaround for https://jira.megvii-inc.com/browse/MGE-3115
     let _ = std::fs::remove_dir_all(&dest);
 
-    let tag = run_fun!(
-        git ls-remote --tags $REPO | grep -o -E "v.*?[^\\^{}]$" | grep "$version" | tail -n 1
-    )?;
-
     run_cmd!(
         cd $base_path;
-        git clone --depth=1 -b $tag $REPO $dest;
+        git clone --depth=1 -b $version $REPO $dest;
         sed -i "s/LiteCDataType/LiteDataType/g" $err_header;
     )?;
 

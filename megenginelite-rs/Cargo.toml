@@ -2,7 +2,7 @@
 name = "megenginelite-rs"
 version="1.7.0"
 edition = "2018"
-license-file = "../LICENSE"
+license = "Apache-2.0"
 description = "A safe megenginelite wrapper in Rust"
 documentation = "https://docs.rs/megenginelite-rs"
 readme = "../README.md"

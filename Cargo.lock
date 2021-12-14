@@ -237,18 +237,41 @@ dependencies = [
 ]
 
 [[package]]
+name = "megenginelite-derive"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8f3c1481322831659d7576430ddc4e19efacd90e1421e39919df641b7b3978d6"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "megenginelite-rs"
 version = "1.7.0"
 dependencies = [
  "anyhow",
  "atomic-waker",
- "megenginelite-derive",
- "megenginelite-sys",
+ "megenginelite-derive 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "megenginelite-sys 1.7.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
 name = "megenginelite-sys"
 version = "1.7.0"
+dependencies = [
+ "bindgen",
+ "cmd_lib",
+ "lazy_static",
+ "libloading",
+]
+
+[[package]]
+name = "megenginelite-sys"
+version = "1.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b590653b4b3e56318e5fd66db97af4e80dc7e1913a8cfbbae5719382cd4065da"
 dependencies = [
  "bindgen",
  "cmd_lib",
