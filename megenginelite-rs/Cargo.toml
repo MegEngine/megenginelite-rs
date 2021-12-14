@@ -1,6 +1,6 @@
 [package]
 name = "megenginelite-rs"
-version="1.7.0"
+version="1.7.0-1"
 edition = "2018"
 license = "Apache-2.0"
 description = "A safe megenginelite wrapper in Rust"
@@ -12,6 +12,6 @@ repository = "https://github.com/MegEngine/megenginelite-rs"
 
 [dependencies]
 anyhow = "1"
-megenginelite-sys = "1.7.0"
+megenginelite-sys = "1.7.0-1"
 megenginelite-derive = "0.1.0"
 atomic-waker = "1"
