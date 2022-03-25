@@ -36,7 +36,6 @@ fn output() -> PathBuf {
 
 fn megbrain() -> PathBuf {
     let mut path = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
-    path.pop();
     path.push("MegEngine");
     path
 }
