@@ -1,4 +1,4 @@
-use megenginelite_derive::{idx, shape};
+use megenginelite_derive::idx;
 
 macro_rules! p {
     ($any:expr) => {
@@ -7,13 +7,8 @@ macro_rules! p {
 }
 
 fn main() {
-    p!(idx!(0..2, 1, ..3;5));
-    p!(idx!(0..2, 2..3;5));
-    p!(idx!(0.., ..3;5, ..3, .., ..;4, 0..;4));
-
-    p!(shape!(1, 2));
-    p!(shape!());
-    p!(shape!(1, 2, 3, 4, 5, 6, 7));
-    // will report error
-    // p!(shape!(1, 2, 3, 4, 5, 6, 7, 8));
+    let n = 2;
+    p!(idx!(0..n, n-1, ..3;5));
+    p!(idx!(0..1+1, 2..3;5));
+    p!(idx!(0.., ..3;5, ..n+1, .., ..;n*2, 0..;n*2));
 }

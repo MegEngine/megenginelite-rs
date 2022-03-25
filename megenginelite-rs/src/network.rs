@@ -1,15 +1,20 @@
-use super::{api, NetworkBuilder, Tensor};
+//! The network module
+
+use super::{api, IntoLiteRst, LiteResult, NetworkBuilder, Tensor};
+use crate::ffi::*;
 use atomic_waker::AtomicWaker;
-use megenginelite_sys::*;
 use std::ffi::{CStr, CString};
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
+/// The network is construct from a model, implement model load, init, forward, and display some
+/// model information
 pub struct Network {
     pub(super) inner: LiteNetwork,
+    waker: Arc<State>,
 }
 
 impl Drop for Network {
@@ -20,29 +25,54 @@ impl Drop for Network {
     }
 }
 
+unsafe impl Send for Network {}
+unsafe impl Sync for Network {}
+
 impl Network {
+    pub(super) fn new(inner: LiteNetwork) -> Network {
+        Network {
+            inner,
+            waker: Arc::new(State::new()),
+        }
+    }
+
     /// Get a builder to build network
     pub fn builder<'a>() -> NetworkBuilder<'a> {
-        NetworkBuilder {
-            config: None,
-            io: None,
-            option_setting: vec![],
-            phantom: Default::default(),
-        }
+        NetworkBuilder::default()
     }
 
     /// Forward the network with filled input data and fill the output data
     /// , and wait until forward finish in sync model
-    pub fn exec_wait(&mut self) {
+    pub fn exec_wait(&mut self) -> LiteResult<()> {
         unsafe {
-            api().LITE_forward(self.inner);
-            api().LITE_wait(self.inner);
+            api().LITE_forward(self.inner).into_rst()?;
+            api().LITE_wait(self.inner).into_rst()?;
         }
+        Ok(())
     }
 
     /// Async version of `exec_wait`
-    pub async fn exec(&mut self) {
-        unimplemented!() // megenginelite dont support callback with userdata
+    pub fn exec(&mut self) -> AsyncExec {
+        self.waker.reset();
+        unsafe extern "C" fn callback(user_data: *mut std::ffi::c_void) -> i32 {
+            let waker = user_data as *mut State;
+            let waker = waker.as_ref().unwrap();
+            waker.signal(0); // todo(wangyi): check error
+            0
+        }
+        let code = unsafe {
+            api().LITE_set_async_callback_with_userdata(
+                self.inner,
+                Some(callback),
+                Arc::as_ptr(&self.waker) as *mut std::ffi::c_void,
+            );
+
+            api().LITE_forward(self.inner)
+        };
+        self.waker.rlt.store(code, Ordering::Relaxed);
+        AsyncExec {
+            state: self.waker.clone(),
+        }
     }
 
     /// Get the network input and ouput tensor
@@ -79,7 +109,7 @@ impl Network {
 
     /// Get the input tensor name in the order in loaded model
     pub fn input_names(&self) -> Vec<&str> {
-        let mut n = 0u64;
+        let mut n = 0;
         let mut names;
         unsafe {
             api().LITE_get_all_input_name(self.inner, &mut n, std::ptr::null_mut());
@@ -96,7 +126,7 @@ impl Network {
 
     /// Get the output tensor name in the order in loaded model
     pub fn output_names(&self) -> Vec<&str> {
-        let mut n = 0u64;
+        let mut n = 0;
         let mut names;
         unsafe {
             api().LITE_get_all_output_name(
@@ -120,6 +150,7 @@ impl Network {
     }
 }
 
+#[doc(hidden)]
 #[derive(Default, Clone)]
 pub struct AsyncExec {
     state: Arc<State>,
@@ -127,35 +158,42 @@ pub struct AsyncExec {
 
 #[derive(Default)]
 struct State {
+    rlt: AtomicI32,
     finish: AtomicBool,
     waker: AtomicWaker,
 }
 
-impl AsyncExec {
-    pub fn new() -> Self {
-        AsyncExec {
-            state: Arc::new(State {
-                waker: AtomicWaker::new(),
-                finish: AtomicBool::new(false),
-            }),
+impl State {
+    fn new() -> Self {
+        State {
+            waker: AtomicWaker::new(),
+            rlt: AtomicI32::new(0),
+            finish: AtomicBool::new(false),
         }
     }
 
-    pub fn signal(&self) {
-        self.state.finish.store(true, Ordering::Relaxed);
-        self.state.waker.wake();
+    fn signal(&self, rlt: i32) {
+        self.rlt.store(rlt, Ordering::Relaxed);
+        self.finish.store(true, Ordering::Relaxed);
+        self.waker.wake();
+    }
+
+    fn reset(&self) {
+        self.rlt.store(0, Ordering::Relaxed);
+        self.finish.store(false, Ordering::Relaxed);
     }
 }
 
 impl Future for AsyncExec {
-    type Output = ();
+    type Output = LiteResult<()>;
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        if self.state.finish.load(Ordering::Relaxed) {
-            Poll::Ready(())
+        let view = self.state.rlt.load(Ordering::Relaxed);
+        if view != 0 {
+            Poll::Ready(view.into_rst())
         } else {
             self.state.waker.register(cx.waker());
             if self.state.finish.load(Ordering::Relaxed) {
-                Poll::Ready(())
+                Poll::Ready(self.state.rlt.load(Ordering::Relaxed).into_rst())
             } else {
                 Poll::Pending
             }
@@ -168,30 +206,38 @@ mod test {
     use crate::*;
 
     #[test]
-    fn test_basis() {
-        unsafe { assert!(load(lib_path()).is_ok()) };
-        let mut network = Network::builder().build(model_path());
+    fn test_basis() -> LiteResult<()> {
+        let mut network = Network::builder().build(model_path())?;
         assert!(network.io_tensor("data").is_some());
         if let Some(input) = network.io_tensor("data") {
             assert_eq!(input.dtype(), DataType::F32);
             assert_eq!(input.shape(), &[1, 3, 224, 224]);
         }
-        network.exec_wait();
+        network.exec_wait()?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_async() -> LiteResult<()> {
+        let mut network = Network::builder().build(model_path())?;
+        assert!(network.io_tensor("data").is_some());
+        if let Some(input) = network.io_tensor("data") {
+            assert_eq!(input.dtype(), DataType::F32);
+            assert_eq!(input.shape(), &[1, 3, 224, 224]);
+        }
+        network.exec().await?;
+        Ok(())
     }
 
     #[test]
-    fn test_io() {
-        unsafe { assert!(load(lib_path()).is_ok()) };
-        let io = NetworkIO {
-            inputs: &[],
-            outputs: &[],
-        };
-        let mut network = Network::builder().io(io).build(model_path());
+    fn test_io() -> LiteResult<()> {
+        let mut network = Network::builder().build(model_path())?;
         assert!(network.io_tensor("data").is_some());
         if let Some(input) = network.io_tensor("data") {
             assert_eq!(input.dtype(), DataType::F32);
             assert_eq!(input.shape(), &[1, 3, 224, 224]);
         }
-        network.exec_wait();
+        network.exec_wait()?;
+        Ok(())
     }
 }

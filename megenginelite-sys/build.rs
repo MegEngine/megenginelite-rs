@@ -1,4 +1,5 @@
-use cmd_lib::*;
+#![allow(dead_code)]
+
 use std::env;
 use std::fs;
 use std::io;
@@ -34,7 +35,10 @@ fn output() -> PathBuf {
 }
 
 fn megbrain() -> PathBuf {
-    output().join(format!("megbrain-{}", version()))
+    let mut path = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
+    path.pop();
+    path.push("MegEngine");
+    path
 }
 
 fn lite_header() -> PathBuf {
@@ -49,27 +53,11 @@ fn lite_include_dir() -> PathBuf {
     megbrain().join("lite/include/lite")
 }
 
-fn fetch() -> io::Result<()> {
-    const REPO: &str = "https://github.com/MegEngine/MegEngine.git";
-    let version = version();
-    let base_path = output();
-    let dest = megbrain();
-    let err_header = lite_include_dir().join("common_enum_c.h"); // workaround for https://jira.megvii-inc.com/browse/MGE-3115
-    let _ = std::fs::remove_dir_all(&dest);
-
-    run_cmd!(
-        cd $base_path;
-        git clone --depth=1 -b $version $REPO $dest;
-        sed -i "s/LiteCDataType/LiteDataType/g" $err_header;
-    )?;
-
-    Ok(())
-}
-
 fn bindgen(path: &Path) -> io::Result<()> {
     let b = bindgen::builder()
         .header(lite_header().to_str().unwrap())
         .dynamic_library_name("MgeLiteDynLib")
+        .size_t_is_usize(true)
         .clang_arg(format!("-I{}", lite_c_include_dir().to_str().unwrap()))
         .clang_arg(format!("-I{}", lite_include_dir().to_str().unwrap()))
         .generate()
@@ -78,8 +66,25 @@ fn bindgen(path: &Path) -> io::Result<()> {
 }
 
 fn main() {
-    if fs::metadata(&lite_c_include_dir()).is_err() || fs::metadata(&lite_include_dir()).is_err() {
-        fetch().unwrap();
-    }
     bindgen(&output().join("bindings.rs")).unwrap();
+
+    let version = version();
+    fs::write(&output().join("version.rs"), {
+        let mut vs: Vec<i32> = version[1..]
+            .split(".")
+            .map(|x| x.parse().unwrap())
+            .collect();
+        while vs.len() < 3 {
+            vs.push(0);
+        }
+        format!(
+            r#"
+pub static MAJOR: i32 = {};
+pub static MINOR: i32 = {};
+pub static PATCH: i32 = {};
+                "#,
+            vs[0], vs[1], vs[2]
+        )
+    })
+    .unwrap();
 }

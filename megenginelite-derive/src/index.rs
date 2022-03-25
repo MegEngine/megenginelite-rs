@@ -1,15 +1,16 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{
-    parse::{Error, Parse, ParseStream, Result},
+    parse::{Parse, ParseStream, Result},
     punctuated::Punctuated,
-    LitInt, Token,
+    Expr, ExprRange, Token,
 };
 
 struct Index {
-    start: Option<u64>,
-    end: Option<u64>,
-    step: Option<u64>,
+    start: Option<Box<Expr>>,
+    end: Option<Box<Expr>>,
+    step: Option<Expr>,
+    one: bool,
 }
 
 pub struct IndexSequence {
@@ -18,33 +19,38 @@ pub struct IndexSequence {
 
 impl Parse for Index {
     fn parse(input: ParseStream) -> Result<Self> {
-        let mut start: Option<u64> = None;
-        let mut end: Option<u64> = None;
-        let mut step: Option<u64> = None;
-        if !input.peek(Token![..]) {
-            let lit: LitInt = input.parse()?;
-            start = Some(lit.base10_parse()?);
-        }
+        let mut start: Option<_> = None;
+        let mut end: Option<_> = None;
+        let mut step: Option<Expr> = None;
 
-        if input.peek(Token![..]) {
-            input.parse::<Token![..]>()?;
-            if input.peek(LitInt) {
-                let lit: LitInt = input.parse()?;
-                end = Some(lit.base10_parse()?);
-            }
-            if input.peek(Token![;]) {
-                input.parse::<Token![;]>()?;
-                let lit: LitInt = input.parse()?;
-                step = Some(lit.base10_parse()?);
+        let mut one = false;
+        if input.fork().parse::<ExprRange>().is_ok() {
+            if let Ok(ExprRange {
+                from, limits, to, ..
+            }) = input.parse::<ExprRange>()
+            {
+                if matches!(limits, syn::RangeLimits::Closed(_)) {
+                    one = true;
+                }
+                start = from;
+                end = to;
             }
         } else {
-            if start.is_none() {
-                return Err(Error::new(input.span(), "expected a `start` [number]"));
-            }
-            end = start.map(|x| x + 1);
+            start = Some(Box::new(input.parse::<Expr>()?));
+            one = true;
         }
 
-        Ok(Index { start, end, step })
+        if input.peek(Token![;]) {
+            input.parse::<Token![;]>()?;
+            step = Some(input.parse()?);
+        }
+
+        Ok(Index {
+            start,
+            end,
+            step,
+            one,
+        })
     }
 }
 
@@ -61,8 +67,11 @@ pub fn expand(index_seq: IndexSequence) -> TokenStream {
         .seq
         .iter()
         .map(|index| {
-            let start = index.start.unwrap_or(0);
-            quote! (#start)
+            if let Some(start) = index.start.as_ref() {
+                quote! (#start)
+            } else {
+                quote!(0)
+            }
         })
         .collect();
     let end: Vec<_> = index_seq
@@ -71,9 +80,18 @@ pub fn expand(index_seq: IndexSequence) -> TokenStream {
         .map(|index| {
             let end = &index.end;
             if let Some(end) = end {
-                quote! ( Some(#end) )
+                if index.one {
+                    quote! ( Some((#end) + 1) )
+                } else {
+                    quote! ( Some(#end) )
+                }
             } else {
-                quote!(None)
+                if index.one {
+                    let start = index.start.as_ref().unwrap();
+                    quote!(Some((#start) + 1))
+                } else {
+                    quote!(None)
+                }
             }
         })
         .collect();
@@ -81,8 +99,11 @@ pub fn expand(index_seq: IndexSequence) -> TokenStream {
         .seq
         .iter()
         .map(|index| {
-            let step = index.step.unwrap_or(1);
-            quote!(#step)
+            if let Some(step) = &index.step {
+                quote!(#step)
+            } else {
+                quote!(1)
+            }
         })
         .collect();
     quote! {

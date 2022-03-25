@@ -1,36 +1,59 @@
-use super::{api, utils, Network};
-use megenginelite_sys::*;
+//! The builder module
+
+use super::*;
+use crate::ffi::*;
+use std::ffi::CString;
 use std::path::Path;
 
+/// Default network config
 pub fn default_config() -> LiteConfig {
     unsafe { *api().default_config() }
 }
 
-fn default_io() -> LiteNetworkIO {
-    unsafe { *api().default_network_io() }
+/// A type to describe network's input and output
+pub struct IO<'a> {
+    pub name: &'a str,
+    pub is_host: bool,
+    pub io_type: LiteIOType,
+    pub layout: Layout<'a>,
 }
 
-pub struct NetworkIO<'a> {
-    pub inputs: &'a [LiteIO],
-    pub outputs: &'a [LiteIO],
-}
-
-impl<'a> Into<LiteNetworkIO> for NetworkIO<'a> {
-    fn into(self) -> LiteNetworkIO {
-        LiteNetworkIO {
-            inputs: self.inputs.as_ptr() as *mut LiteIO,
-            outputs: self.outputs.as_ptr() as *mut LiteIO,
-            input_size: self.inputs.len() as u64,
-            output_size: self.outputs.len() as u64,
+impl<'a> Default for IO<'a> {
+    fn default() -> Self {
+        IO {
+            name: "",
+            is_host: true,
+            io_type: IOType::VALUE,
+            layout: Default::default(),
         }
     }
 }
 
+impl<'a> IO<'a> {
+    fn as_raw(&self) -> (CString, LiteIO) {
+        let name = CString::new(self.name).unwrap();
+        let name_ptr = name.as_ptr();
+        (
+            name,
+            LiteIO {
+                name: name_ptr,
+                is_host: self.is_host as i32,
+                io_type: self.io_type,
+                config_layout: self.layout.as_raw(),
+            },
+        )
+    }
+}
+
+/// The network builder
+#[derive(Default)]
 pub struct NetworkBuilder<'a> {
-    pub(super) config: Option<LiteConfig>,
-    pub(super) io: Option<LiteNetworkIO>,
-    pub(super) option_setting: Vec<Box<dyn FnOnce(LiteNetwork)>>,
-    pub(super) phantom: std::marker::PhantomData<&'a Network>,
+    config: Option<LiteConfig>,
+    option_setting: Vec<Box<dyn FnOnce(LiteNetwork)>>,
+    inputs: Vec<LiteIO>,
+    outputs: Vec<LiteIO>,
+    ccache: Vec<CString>,
+    phantom: std::marker::PhantomData<&'a Network>,
 }
 
 impl<'a> NetworkBuilder<'a> {
@@ -40,9 +63,19 @@ impl<'a> NetworkBuilder<'a> {
         self
     }
 
-    /// Set the configration io to create the network
-    pub fn io(mut self, io: NetworkIO<'a>) -> NetworkBuilder<'a> {
-        self.io = Some(io.into());
+    /// Set the configration input to create the network
+    pub fn add_input(mut self, io: IO) -> NetworkBuilder<'a> {
+        let (cstr, io) = io.as_raw();
+        self.inputs.push(io);
+        self.ccache.push(cstr);
+        self
+    }
+
+    /// Set the configration output to create the network
+    pub fn add_output(mut self, io: IO) -> NetworkBuilder<'a> {
+        let (cstr, io) = io.as_raw();
+        self.outputs.push(io);
+        self.ccache.push(cstr);
         self
     }
 
@@ -65,7 +98,7 @@ impl<'a> NetworkBuilder<'a> {
 
     /// When device is CPU, this interface will set the to be loaded model
     /// run in multi thread mode with the given thread number.
-    pub fn threads_number(mut self, nr_threads: u64) -> NetworkBuilder<'a> {
+    pub fn threads_number(mut self, nr_threads: usize) -> NetworkBuilder<'a> {
         self.option_setting.push(Box::new(move |net| unsafe {
             api().LITE_set_cpu_threads_number(net, nr_threads);
         }));
@@ -114,7 +147,7 @@ impl<'a> NetworkBuilder<'a> {
 
     /// Set workspace_limit for oprs with multiple algorithms, set workspace limit can save memory
     /// but may influence the performance
-    pub fn workspace_limit(mut self, workspace_limit: u64) -> NetworkBuilder<'a> {
+    pub fn workspace_limit(mut self, workspace_limit: usize) -> NetworkBuilder<'a> {
         self.option_setting.push(Box::new(move |net| unsafe {
             api().LITE_set_network_algo_workspace_limit(net, workspace_limit);
         }));
@@ -169,33 +202,51 @@ impl<'a> NetworkBuilder<'a> {
     }
 
     /// Load the model to network form given path
-    pub fn build(self, path: impl AsRef<Path>) -> Network {
+    pub fn build(self, path: impl AsRef<Path>) -> LiteResult<Network> {
         let path_str_c = utils::path_to_cstr(path.as_ref());
         let config = self.config.unwrap_or(default_config());
-        let io = self.io.unwrap_or(default_io());
+        let io = LiteNetworkIO {
+            inputs: self.inputs.as_ptr() as *mut LiteIO,
+            outputs: self.outputs.as_ptr() as *mut LiteIO,
+            input_size: self.inputs.len(),
+            output_size: self.outputs.len(),
+        };
 
         let mut net = std::ptr::null_mut();
-        unsafe { api().LITE_make_network(&mut net, config, io) };
+        unsafe { api().LITE_make_network(&mut net, config, io).into_rst()? };
         for f in self.option_setting.into_iter() {
             f(net);
         }
-        unsafe { api().LITE_load_model_from_path(net, path_str_c.as_ptr()) };
+        unsafe {
+            api()
+                .LITE_load_model_from_path(net, path_str_c.as_ptr())
+                .into_rst()?
+        };
 
-        Network { inner: net }
+        Ok(Network::new(net))
     }
 
     /// Load the model to network form memory
-    pub fn build_from_memory(self, mem: &mut [u8]) -> Network {
+    pub fn build_from_memory(self, mem: &mut [u8]) -> LiteResult<Network> {
         let config = self.config.unwrap_or(default_config());
-        let io = self.io.unwrap_or(default_io());
+        let io = LiteNetworkIO {
+            inputs: self.inputs.as_ptr() as *mut LiteIO,
+            outputs: self.outputs.as_ptr() as *mut LiteIO,
+            input_size: self.inputs.len(),
+            output_size: self.outputs.len(),
+        };
 
         let mut net = std::ptr::null_mut();
-        unsafe { api().LITE_make_network(&mut net, config, io) };
+        unsafe { api().LITE_make_network(&mut net, config, io).into_rst()? };
         for f in self.option_setting.into_iter() {
             f(net);
         }
-        unsafe { api().LITE_load_model_from_mem(net, mem.as_ptr() as *mut _, mem.len() as u64) };
+        unsafe {
+            api()
+                .LITE_load_model_from_mem(net, mem.as_ptr() as *mut _, mem.len())
+                .into_rst()?
+        };
 
-        Network { inner: net }
+        Ok(Network::new(net))
     }
 }

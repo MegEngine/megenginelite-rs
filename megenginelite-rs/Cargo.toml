@@ -1,17 +1,26 @@
 [package]
 name = "megenginelite-rs"
-version="1.7.0-1"
+version="1.8.2"
 edition = "2018"
-license = "Apache-2.0"
+license-file = "Apache-2.0"
 description = "A safe megenginelite wrapper in Rust"
 documentation = "https://docs.rs/megenginelite-rs"
 readme = "../README.md"
 repository = "https://github.com/MegEngine/megenginelite-rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[features]
+default = ["auto-load"]
+auto-load = []
+ndarray-basis = ["ndarray"]
 
 [dependencies]
-anyhow = "1"
-megenginelite-sys = "1.7.0-1"
-megenginelite-derive = "0.1.0"
+megenginelite-sys = { version="1.8.2", path="../megenginelite-sys" }
+megenginelite-derive = { version="0.2.0", path="../megenginelite-derive" }
 atomic-waker = "1"
+lazy_static = "1"
+ndarray = { version="0.15", optional=true }
+async-channel = "1"
+
+[dev-dependencies]
+tokio = { version="1", features=["macros", "rt-multi-thread"] }
